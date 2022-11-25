@@ -44,6 +44,8 @@ pub fn run() {
         pin_dp: usb_dp.into_floating_input(&mut gpioa.crh),
     });
 
+    let mut serial = SerialPort::new(&usb_bus);
+
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x16c0, 0x27dd))
         .manufacturer("The Bots")
         .product("Robot")
@@ -51,14 +53,13 @@ pub fn run() {
         .device_class(USB_CLASS_CDC)
         .build();
 
-    let mut serial = SerialPort::new(&usb_bus);
 
     loop {
         if !usb_dev.poll(&mut [&mut serial]) {
             continue;
         }
 
-        let mut buf = [0u8; 64];
+        let mut buf = [0u8; 1024];
 
         match serial.read(&mut buf) {
             Ok(count) if count > 0 => {

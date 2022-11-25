@@ -5,7 +5,6 @@ authors = ["Akhil Veeraghanta <akhil.veeraghanta@outlook.com>"]
 edition = "2021"
 
 [features]
-default = ["robot"]
 robot = []
 dongle = []
 
