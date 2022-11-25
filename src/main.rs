@@ -4,27 +4,21 @@
 // We gonna use it no matter what.
 #![no_std]
 #![no_main]
-mod robot;
-mod dongle;
+// set the panic handler
+extern crate panic_semihosting;
 
-use robot::Robot;
-use dongle::Dongle;
 use cortex_m_rt::entry;
+
+mod dongle;
+mod robot;
 
 #[entry]
 fn main() -> ! {
-
     #[cfg(feature = "robot")]
-    let robot = Robot::new();
+    robot::run();
 
     #[cfg(feature = "dongle")]
-    let dongle = Dongle::new();
+    dongle::run();
 
-    loop {
-        #[cfg(feature = "robot")]
-        robot.run();
-
-        #[cfg(feature = "dongle")]
-        dongle.run();
-    }
+    loop {}
 }
