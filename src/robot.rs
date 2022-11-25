@@ -1,16 +1,21 @@
-extern crate nrf24l01;
 extern crate panic_semihosting;
 
 use bxcan::Fifo;
+use cortex_m_semihosting::hprintln;
 use nb::block;
+use stm32f1xx_hal::device::adc2::jsqr::W;
 use stm32f1xx_hal::device::Peripherals;
 use stm32f1xx_hal::prelude::*;
+use stm32f1xx_hal::spi::{Mode, Phase, Polarity};
 use stm32f1xx_hal::{can, pac, prelude::*, spi};
 
-use nrf24l01::NRF24L01;
+use embedded_nrf24l01::Configuration;
+use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
 
 pub fn run() {
     let device_peripherals = Peripherals::take().unwrap();
+    let mut cortex_peripherals = cortex_m::peripheral::Peripherals::take().unwrap();
+
     let mut flash = device_peripherals.FLASH.constrain();
     let rcc = device_peripherals.RCC.constrain();
 
@@ -29,10 +34,12 @@ pub fn run() {
     let mut gpioa = device_peripherals.GPIOA.split();
     let mut gpiob = device_peripherals.GPIOB.split();
     let mut gpioc = device_peripherals.GPIOC.split();
+
     let mut afio = device_peripherals.AFIO.constrain();
 
     let mut ncs = gpioa.pa4.into_push_pull_output(&mut gpioa.crl);
     ncs.set_high();
+
     let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
     let miso = gpioa.pa6;
     let mosi = gpioa.pa7.into_alternate_push_pull(&mut gpioa.crl);
@@ -42,15 +49,26 @@ pub fn run() {
         device_peripherals.SPI1,
         (sck, miso, mosi),
         &mut afio.mapr,
-        nrf24l01::MODE,
-        1.MHz(),
+        spi::Mode {
+            polarity: spi::Polarity::IdleLow,
+            phase: spi::Phase::CaptureOnFirstTransition,
+        },
+        10.MHz(),
         clocks,
     );
 
     // nRF24L01 library specific starts here.
-    let mut nrf24l01 = NRF24L01::new(spi, ncs, ce, 1, 4).unwrap();
-    nrf24l01.set_raddr("serv1".as_bytes()).unwrap();
-    nrf24l01.config().unwrap();
+    let mut nrf24 = NRF24L01::new(ce, ncs, spi).unwrap();
+
+    nrf24.set_frequency(10).unwrap();
+    nrf24.set_auto_retransmit(0, 0).unwrap();
+    nrf24.set_rf(&DataRate::R2Mbps, 3).unwrap();
+    nrf24
+        .set_pipes_rx_enable(&[true, false, false, false, false, false])
+        .unwrap();
+    nrf24.set_auto_ack(&[false; 6]).unwrap();
+    nrf24.set_crc(CrcMode::Disabled).unwrap();
+    nrf24.set_tx_addr(&b"fnord"[..]).unwrap();
 
     let can = can::Can::new(device_peripherals.CAN1, device_peripherals.USB);
 
@@ -76,20 +94,10 @@ pub fn run() {
     block!(can.enable_non_blocking()).unwrap();
 
     loop {
-        // Receive a frame
-        let frame = block!(can.receive()).unwrap();
-        // Transmit the same frame back
-        block!(can.transmit(&frame)).unwrap();
-        if !nrf24l01.is_sending().unwrap() {
-            if nrf24l01.data_ready().unwrap() {
-                let mut buffer = [0; 4];
-                nrf24l01.get_data(&mut buffer).unwrap();
-                nrf24l01.set_taddr("clie1".as_bytes()).unwrap();
-                nrf24l01.send(&buffer).unwrap();
-                // Set Radio LED high here
-            } else {
-                // Set Radio LED low here
-            }
-        }
+        //if !nrf24.rx().unwrap().ready().is_err() {
+        //let mut buf = [0u8; 32];
+        //let len = nrf24.read(&mut buf).unwrap();
+        //hprintln!("Received: {:?}", buf);
+        //}
     }
 }

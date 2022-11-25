@@ -10,7 +10,7 @@ dongle = []
 
 [dependencies]
 stm32f1xx-hal = { git = "https://github.com/stm32-rs/stm32f1xx-hal.git", branch = "master", features = ["rt", "stm32f103", "stm32-usbd", "has-can"] }
-nrf24l01 = { git = "https://github.com/sfunderbots/nrf24l01.git", branch = "master" }
+embedded-nrf24l01 = { git = "https://github.com/sfunderbots/embedded-nrf24l01.git", branch = "master" }
 usb-device = "0.2.8"
 usbd-serial = "0.1.1"
 nb = "1"
@@ -19,3 +19,4 @@ cortex-m = "0.7.6"
 cortex-m-rt = "0.7.1"
 embedded-dma = "0.2.0"
 panic-semihosting = "0.5.6"
+cortex-m-semihosting = "0.5.0"

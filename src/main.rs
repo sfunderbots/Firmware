@@ -7,6 +7,10 @@
 // set the panic handler
 extern crate panic_semihosting;
 
+#[macro_use]
+extern crate cortex_m;
+extern crate cortex_m_rt;
+
 use cortex_m_rt::entry;
 
 mod dongle;
