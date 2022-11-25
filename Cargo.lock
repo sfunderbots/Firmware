@@ -11,6 +11,7 @@ dependencies = [
  "cortex-m-rt",
  "embedded-dma",
  "nb 1.0.0",
+ "nrf24l01",
  "panic-semihosting",
  "stm32f1xx-hal",
  "usb-device",
@@ -155,6 +156,14 @@ name = "nb"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "546c37ac5d9e56f55e73b677106873d9d9f5190605e41a856503623648488cae"
+
+[[package]]
+name = "nrf24l01"
+version = "0.0.2"
+source = "git+https://github.com/sfunderbots/nrf24l01.git?branch=master#0da7671af36069e1dc9ab3f6ce761e14f0bfebe3"
+dependencies = [
+ "embedded-hal",
+]
 
 [[package]]
 name = "panic-semihosting"

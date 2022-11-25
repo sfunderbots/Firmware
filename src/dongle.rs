@@ -53,7 +53,6 @@ pub fn run() {
         .device_class(USB_CLASS_CDC)
         .build();
 
-
     loop {
         if !usb_dev.poll(&mut [&mut serial]) {
             continue;

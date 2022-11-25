@@ -15,10 +15,10 @@ mod robot;
 #[entry]
 fn main() -> ! {
     loop {
-    #[cfg(feature = "robot")]
-    robot::run();
+        #[cfg(feature = "robot")]
+        robot::run();
 
-    #[cfg(feature = "dongle")]
-    dongle::run();
+        #[cfg(feature = "dongle")]
+        dongle::run();
     }
 }

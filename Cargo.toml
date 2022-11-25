@@ -10,6 +10,7 @@ dongle = []
 
 [dependencies]
 stm32f1xx-hal = { git = "https://github.com/stm32-rs/stm32f1xx-hal.git", branch = "master", features = ["rt", "stm32f103", "stm32-usbd", "has-can"] }
+nrf24l01 = { git = "https://github.com/sfunderbots/nrf24l01.git", branch = "master" }
 usb-device = "0.2.8"
 usbd-serial = "0.1.1"
 nb = "1"
