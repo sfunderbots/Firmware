@@ -1,0 +1,21 @@
+[package]
+name = "MainboardFirmware"
+version = "0.0.1"
+authors = ["Akhil Veeraghanta <akhil.veeraghanta@outlook.com>"]
+edition = "2021"
+
+[features]
+default = ["robot", "dongle"]
+robot = []
+dongle = []
+
+[dependencies]
+stm32f1xx-hal = { git = "https://github.com/stm32-rs/stm32f1xx-hal.git", branch = "master", features = ["rt", "stm32f103", "stm32-usbd", "has-can"] }
+usb-device = "0.2.8"
+usbd-serial = "0.1.1"
+nb = "1"
+bxcan = "0.7"
+cortex-m = "0.7.6"
+cortex-m-rt = "0.7.1"
+embedded-dma = "0.2.0"
+panic-semihosting = "0.5.6"
