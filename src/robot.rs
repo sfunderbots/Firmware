@@ -5,12 +5,17 @@ use cortex_m_semihosting::hprintln;
 use nb::block;
 use stm32f1xx_hal::device::Peripherals;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::{can, spi};
+use stm32f1xx_hal::timer::delay;
+use stm32f1xx_hal::{can, spi, timer};
+use ws2812_spi::{Ws2812, MODE};
+
+use smart_leds::{SmartLedsWrite, RGB8};
 
 use embedded_nrf24l01::{Configuration, Device};
 use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
 
 pub fn run() {
+    let cortex_peripherals = cortex_m::Peripherals::take().unwrap();
     let device_peripherals = Peripherals::take().unwrap();
     let mut flash = device_peripherals.FLASH.constrain();
     let rcc = device_peripherals.RCC.constrain();
@@ -21,7 +26,7 @@ pub fn run() {
     let clocks = rcc
         .cfgr
         .use_hse(8.MHz())
-        .sysclk(48.MHz())
+        .sysclk(72.MHz())
         .pclk1(24.MHz())
         .freeze(&mut flash.acr);
 
@@ -40,7 +45,7 @@ pub fn run() {
     let mut ncs = gpioa.pa4.into_push_pull_output(&mut gpioa.crl);
     ncs.set_high();
 
-    let spi = spi::Spi::spi1(
+    let radio_spi = spi::Spi::spi1(
         device_peripherals.SPI1,
         (sck, miso, mosi),
         &mut afio.mapr,
@@ -48,12 +53,12 @@ pub fn run() {
             polarity: spi::Polarity::IdleLow,
             phase: spi::Phase::CaptureOnFirstTransition,
         },
-        8.MHz(), // Recomended SPI clock frequency is 8MHz
+        2.MHz(), // Recomended SPI clock frequency is 8MHz
         clocks,
     );
 
     // Setup Radio
-    let nrf24 = NRF24L01::new(ce, ncs, spi).unwrap();
+    let nrf24 = NRF24L01::new(ce, ncs, radio_spi).unwrap();
     let mut nrf = nrf24.tx().unwrap();
 
     // Configure Radio
@@ -68,6 +73,24 @@ pub fn run() {
     nrf.set_crc(CrcMode::TwoBytes).unwrap();
     nrf.set_tx_addr(&b"2Node"[..]).unwrap();
     nrf.set_rx_addr(1, &b"3Node"[..]).unwrap();
+
+    let sck = gpiob.pb13.into_alternate_push_pull(&mut gpiob.crh);
+    let mosi = gpiob.pb15.into_alternate_push_pull(&mut gpiob.crh);
+    let miso = gpiob.pb14.into_floating_input(&mut gpiob.crh);
+
+    let led_spi = spi::Spi::spi2(
+        device_peripherals.SPI2,
+        (sck, miso, mosi),
+        ws2812_spi::MODE,
+        5.MHz(), // Recomended SPI clock frequency is 8MHz
+        clocks,
+    );
+    
+    let mut data: [RGB8; 12] = [RGB8::default(); 12];
+    let mut ws = Ws2812::new(led_spi);
+    data[0] = RGB8::new(255, 0, 0);
+    data[1] = RGB8::new(0, 255, 0);
+    data[2] = RGB8::new(0, 0, 255);
 
     // Setup CAN
     let can = can::Can::new(device_peripherals.CAN1, device_peripherals.USB);
@@ -91,12 +114,14 @@ pub fn run() {
     // Split the peripheral into transmitter and receiver parts.
     block!(can.enable_non_blocking()).unwrap();
 
+    let mut delay = device_peripherals.TIM2.delay_us(&clocks);
+
     loop {
         if nrf.can_send().unwrap() {
             nrf.send(&[1; 32]).unwrap();
-            hprintln!("Sent");
         }
-        // wait for 1 second
-        cortex_m::asm::delay(48_000_000);
+        ws.write(data.iter().cloned()).unwrap();
+        data.rotate_right(1);
+        delay.delay_ms(30_u16);
     }
 }
