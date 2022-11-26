@@ -12,7 +12,6 @@ use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
 
 pub fn run() {
     let device_peripherals = Peripherals::take().unwrap();
-
     let mut flash = device_peripherals.FLASH.constrain();
     let rcc = device_peripherals.RCC.constrain();
 
@@ -28,10 +27,12 @@ pub fn run() {
 
     assert!(clocks.usbclk_valid());
 
+    // GPIO parts
     let mut gpioa = device_peripherals.GPIOA.split();
     let mut gpiob = device_peripherals.GPIOB.split();
     let mut afio = device_peripherals.AFIO.constrain();
 
+    // Setup SPI (consumed by NRF24L01)
     let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
     let miso = gpioa.pa6;
     let mosi = gpioa.pa7.into_alternate_push_pull(&mut gpioa.crl);
@@ -47,10 +48,28 @@ pub fn run() {
             polarity: spi::Polarity::IdleLow,
             phase: spi::Phase::CaptureOnFirstTransition,
         },
-        8.MHz(),
+        8.MHz(), // Recomended SPI clock frequency is 8MHz
         clocks,
     );
 
+    // Setup Radio
+    let nrf24 = NRF24L01::new(ce, ncs, spi).unwrap();
+    let mut nrf = nrf24.tx().unwrap();
+
+    // Configure Radio
+    nrf.flush_tx().unwrap();
+    nrf.flush_rx().unwrap();
+
+    // TODO make this configurable
+    nrf.set_frequency(0x4c).unwrap();
+    nrf.set_auto_retransmit(0x0f, 0x0f).unwrap();
+    nrf.set_auto_ack(&[false; 6]).unwrap();
+    nrf.set_rf(&DataRate::R1Mbps, 3).unwrap();
+    nrf.set_crc(CrcMode::TwoBytes).unwrap();
+    nrf.set_tx_addr(&b"2Node"[..]).unwrap();
+    nrf.set_rx_addr(1, &b"3Node"[..]).unwrap();
+
+    // Setup CAN
     let can = can::Can::new(device_peripherals.CAN1, device_peripherals.USB);
     let rx = gpiob.pb8.into_floating_input(&mut gpiob.crh);
     let tx = gpiob.pb9.into_alternate_push_pull(&mut gpiob.crh);
@@ -72,27 +91,9 @@ pub fn run() {
     // Split the peripheral into transmitter and receiver parts.
     block!(can.enable_non_blocking()).unwrap();
 
-    let nrf24 = NRF24L01::new(ce, ncs, spi).unwrap();
-    let mut nrf = nrf24.tx().unwrap();
-    nrf.flush_tx().unwrap();
-    nrf.flush_rx().unwrap();
-    nrf.set_frequency(0x4c).unwrap();
-    nrf.set_auto_retransmit(0x0f, 0x0f).unwrap();
-    nrf.set_auto_ack(&[false; 6]).unwrap();
-    nrf.set_rf(&DataRate::R1Mbps, 3).unwrap();
-    nrf.set_crc(CrcMode::TwoBytes).unwrap();
-    nrf.set_tx_addr(&b"2Node"[..]).unwrap();
-
-    hprintln!("------");
-    hprintln!("ADDRWIDTH: {}", nrf.get_address_width().unwrap());
-    hprintln!("FREQ: {}", nrf.get_frequency().unwrap());
-    hprintln!("INTER: {}", nrf.get_interrupts().unwrap().0);
-    hprintln!("------");
-
     loop {
-        if nrf.can_send().unwrap()
-        {
-            nrf.send(&[1; 32]).unwrap(); 
+        if nrf.can_send().unwrap() {
+            nrf.send(&[1; 32]).unwrap();
             hprintln!("Sent");
         }
         // wait for 1 second
