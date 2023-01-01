@@ -38,17 +38,16 @@ pub fn run() {
     let mut afio = device_peripherals.AFIO.constrain();
 
     // Setup SPI (consumed by NRF24L01)
-    let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
-    let miso = gpioa.pa6;
-    let mosi = gpioa.pa7.into_alternate_push_pull(&mut gpioa.crl);
     let ce = gpioa.pa8.into_push_pull_output(&mut gpioa.crh);
-    let mut ncs = gpioa.pa4.into_push_pull_output(&mut gpioa.crl);
+    let sck = gpiob.pb13.into_alternate_push_pull(&mut gpiob.crh);
+    let miso = gpiob.pb14;
+    let mosi = gpiob.pb15.into_alternate_push_pull(&mut gpiob.crh);
+    let mut ncs = gpiob.pb12.into_push_pull_output(&mut gpiob.crh);
     ncs.set_high();
 
-    let radio_spi = spi::Spi::spi1(
-        device_peripherals.SPI1,
+    let radio_spi = spi::Spi::spi2(
+        device_peripherals.SPI2,
         (sck, miso, mosi),
-        &mut afio.mapr,
         spi::Mode {
             polarity: spi::Polarity::IdleLow,
             phase: spi::Phase::CaptureOnFirstTransition,
@@ -74,18 +73,19 @@ pub fn run() {
     nrf.set_tx_addr(&b"2Node"[..]).unwrap();
     nrf.set_rx_addr(1, &b"3Node"[..]).unwrap();
 
-    let sck = gpiob.pb13.into_alternate_push_pull(&mut gpiob.crh);
-    let mosi = gpiob.pb15.into_alternate_push_pull(&mut gpiob.crh);
-    let miso = gpiob.pb14.into_floating_input(&mut gpiob.crh);
+    let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
+    let miso = gpioa.pa6;
+    let mosi = gpioa.pa7.into_alternate_push_pull(&mut gpioa.crl);
 
-    let led_spi = spi::Spi::spi2(
-        device_peripherals.SPI2,
+    let led_spi = spi::Spi::spi1(
+        device_peripherals.SPI1,
         (sck, miso, mosi),
+        &mut afio.mapr,
         ws2812_spi::MODE,
         5.MHz(), // Recomended SPI clock frequency is 8MHz
         clocks,
     );
-    
+
     let mut data: [RGB8; 12] = [RGB8::default(); 12];
     let mut ws = Ws2812::new(led_spi);
     data[0] = RGB8::new(255, 0, 0);
