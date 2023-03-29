@@ -10,9 +10,7 @@ use stm32f1xx_hal::{can, spi, timer};
 use ws2812_spi::{Ws2812, MODE};
 
 use smart_leds::{SmartLedsWrite, RGB8};
-
-use embedded_nrf24l01::{Configuration, Device};
-use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
+mod tinymovr;
 
 pub fn run() {
     let cortex_peripherals = cortex_m::Peripherals::take().unwrap();
@@ -55,23 +53,6 @@ pub fn run() {
         2.MHz(), // Recomended SPI clock frequency is 8MHz
         clocks,
     );
-
-    // Setup Radio
-    let nrf24 = NRF24L01::new(ce, ncs, radio_spi).unwrap();
-    let mut nrf = nrf24.tx().unwrap();
-
-    // Configure Radio
-    nrf.flush_tx().unwrap();
-    nrf.flush_rx().unwrap();
-
-    // TODO make this configurable
-    nrf.set_frequency(0x4c).unwrap();
-    nrf.set_auto_retransmit(0x0f, 0x0f).unwrap();
-    nrf.set_auto_ack(&[false; 6]).unwrap();
-    nrf.set_rf(&DataRate::R1Mbps, 3).unwrap();
-    nrf.set_crc(CrcMode::TwoBytes).unwrap();
-    nrf.set_tx_addr(&b"2Node"[..]).unwrap();
-    nrf.set_rx_addr(1, &b"3Node"[..]).unwrap();
 
     let sck = gpioa.pa5.into_alternate_push_pull(&mut gpioa.crl);
     let miso = gpioa.pa6;
@@ -117,9 +98,6 @@ pub fn run() {
     let mut delay = device_peripherals.TIM2.delay_us(&clocks);
 
     loop {
-        if nrf.can_send().unwrap() {
-            nrf.send(&[1; 32]).unwrap();
-        }
         ws.write(data.iter().cloned()).unwrap();
         data.rotate_right(1);
         delay.delay_ms(30_u16);
