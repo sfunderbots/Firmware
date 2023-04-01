@@ -1,13 +1,14 @@
 extern crate panic_semihosting;
 
-use bxcan::Fifo;
+use bxcan::*;
 use cortex_m_semihosting::hprintln;
 use nb::block;
-use stm32f1xx_hal::device::Peripherals;
+use stm32f1xx_hal::device::{Peripherals, CAN1};
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::timer::delay;
 use stm32f1xx_hal::{can, spi, timer};
 use ws2812_spi::{Ws2812, MODE};
+use tinymovr::Tinymovr;
 
 use smart_leds::{SmartLedsWrite, RGB8};
 mod tinymovr;
@@ -78,28 +79,28 @@ pub fn run() {
     let rx = gpiob.pb8.into_floating_input(&mut gpiob.crh);
     let tx = gpiob.pb9.into_alternate_push_pull(&mut gpiob.crh);
     can.assign_pins((tx, rx), &mut afio.mapr);
+    hprintln!("BRUH");
 
     // APB1 (PCLK1): 8MHz, Bit rate: 125kBit/s, Sample Point 87.5%
     // Value was calculated with http://www.bittiming.can-wiki.info/
     let mut can = bxcan::Can::builder(can)
-        .set_bit_timing(0x001c_0003)
-        .leave_disabled();
+        .set_bit_timing(0x001c0003)
+        .enable();
 
-    // Configure filters so that can frames can be received.
-    let mut filters = can.modify_filters();
-    filters.enable_bank(0, Fifo::Fifo0, bxcan::filter::Mask32::accept_all());
-
-    // Drop filters to leave filter configuraiton mode.
-    drop(filters);
-
-    // Split the peripheral into transmitter and receiver parts.
-    block!(can.enable_non_blocking()).unwrap();
+    hprintln!("BRUH2");
 
     let mut delay = device_peripherals.TIM2.delay_us(&clocks);
+    hprintln!("BRUH3");
+    //hprintln!("tiny {}", tiny.device_info.device_id);
+    let mut tiny = Tinymovr::new(1, can);
+    hprintln!("BRUH4");
 
     loop {
-        ws.write(data.iter().cloned()).unwrap();
-        data.rotate_right(1);
-        delay.delay_ms(30_u16);
+        hprintln!("trying to transmit");
+        tiny.bruh();
+    hprintln!("BRUH5");
+        //ws.write(data.iter().cloned()).unwrap();
+        //data.rotate_right(1);
+        delay.delay_ms(1000_u16);
     }
 }
