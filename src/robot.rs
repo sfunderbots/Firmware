@@ -1,14 +1,17 @@
 extern crate panic_semihosting;
 
+use bxcan::filter::Mask32;
 use bxcan::*;
 use cortex_m_semihosting::hprintln;
+
 use nb::block;
 use stm32f1xx_hal::device::{Peripherals, CAN1};
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::timer::delay;
 use stm32f1xx_hal::{can, spi, timer};
-use ws2812_spi::{Ws2812, MODE};
+use stm32f1xx_hal::{can::Can, pac, prelude::*};
 use tinymovr::Tinymovr;
+use ws2812_spi::{Ws2812, MODE};
 
 use smart_leds::{SmartLedsWrite, RGB8};
 mod tinymovr;
@@ -22,14 +25,12 @@ pub fn run() {
     // To meet CAN clock accuracy requirements an external crystal or ceramic
     // resonator must be used. The blue pill has a 8MHz external crystal.
     // Other boards might have a crystal with another frequency or none at all.
-    let clocks = rcc
-        .cfgr
-        .use_hse(8.MHz())
-        .sysclk(72.MHz())
-        .pclk1(24.MHz())
-        .freeze(&mut flash.acr);
+    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze(&mut flash.acr);
+    //.sysclk(72.MHz())
+    //.pclk1(24.MHz())
+    //.freeze(&mut flash.acr);
 
-    assert!(clocks.usbclk_valid());
+    //assert!(clocks.usbclk_valid());
 
     // GPIO parts
     let mut gpioa = device_peripherals.GPIOA.split();
@@ -73,34 +74,33 @@ pub fn run() {
     data[0] = RGB8::new(255, 0, 0);
     data[1] = RGB8::new(0, 255, 0);
     data[2] = RGB8::new(0, 0, 255);
+    let mut can1 = {
+        let can = can::Can::new(device_peripherals.CAN1, device_peripherals.USB);
+        let rx = gpioa.pa11.into_floating_input(&mut gpioa.crh);
+        let tx = gpioa.pa12.into_alternate_push_pull(&mut gpioa.crh);
+        can.assign_pins((tx, rx), &mut afio.mapr);
 
-    // Setup CAN
-    let can = can::Can::new(device_peripherals.CAN1, device_peripherals.USB);
-    let rx = gpiob.pb8.into_floating_input(&mut gpiob.crh);
-    let tx = gpiob.pb9.into_alternate_push_pull(&mut gpiob.crh);
-    can.assign_pins((tx, rx), &mut afio.mapr);
-    hprintln!("BRUH");
+        // APB1 (PCLK1): 8MHz, Bit rate: 125kBit/s, Sample Point 87.5%
+        // Value was calculated with http://www.bittiming.can-wiki.info/
+        bxcan::Can::builder(can)
+            .set_bit_timing(0x001c_0002)
+            .set_automatic_retransmit(false)
+            .leave_disabled()
+    };
 
-    // APB1 (PCLK1): 8MHz, Bit rate: 125kBit/s, Sample Point 87.5%
-    // Value was calculated with http://www.bittiming.can-wiki.info/
-    let mut can = bxcan::Can::builder(can)
-        .set_bit_timing(0x001c0003)
-        .enable();
-
-    hprintln!("BRUH2");
+    // Configure filters so that can frames can be received.
+    let mut filters = can1.modify_filters();
+    filters.enable_bank(0, Fifo::Fifo0, Mask32::accept_all());
 
     let mut delay = device_peripherals.TIM2.delay_us(&clocks);
-    hprintln!("BRUH3");
-    //hprintln!("tiny {}", tiny.device_info.device_id);
-    let mut tiny = Tinymovr::new(1, can);
-    hprintln!("BRUH4");
+    drop(filters);
+
+    block!(can1.enable_non_blocking()).unwrap();
+
+    let mut tiny = Tinymovr::new(3, can1);
 
     loop {
-        hprintln!("trying to transmit");
-        tiny.bruh();
-    hprintln!("BRUH5");
-        //ws.write(data.iter().cloned()).unwrap();
-        //data.rotate_right(1);
         delay.delay_ms(1000_u16);
+        tiny.bruh();
     }
 }

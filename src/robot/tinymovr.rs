@@ -1,8 +1,10 @@
 use core::ops::Shl;
 
-/// Command ID's
-use embedded_hal::can::{Frame, Can, StandardId};
 use cortex_m_semihosting::hprintln;
+use nb::block;
+
+/// Command ID's
+use embedded_hal::can::{Can, Frame, StandardId};
 
 const RECV_DELAY_US: f32 = 160.0;
 const CAN_EP_SIZE: u8 = 6;
@@ -23,8 +25,7 @@ const SET_MAX_PLAN_ACCEL_DECEL_EP_ID: u16 = 0x22;
 const GET_MAX_PLAN_ACCEL_DECEL_EP_ID: u16 = 0x23;
 
 #[derive(Default)]
-pub struct TinymovrDeviceInfo
-{
+pub struct TinymovrDeviceInfo {
     pub device_id: u32,
     pub fw_major: u8,
     pub fw_minor: u8,
@@ -32,19 +33,19 @@ pub struct TinymovrDeviceInfo
     pub temperature: u8,
 }
 
-pub struct Tinymovr<CAN>
-{
+pub struct Tinymovr<CAN> {
     can: CAN,
+    device_id: u16,
     pub device_info: TinymovrDeviceInfo,
 }
 
-impl <CAN> Tinymovr<CAN>
-where CAN: Can,
+impl<CAN> Tinymovr<CAN>
+where
+    CAN: Can,
 {
-    pub fn new(device_id: u16, mut can: CAN) -> Tinymovr<CAN>
-    {
+    pub fn new(device_id: u16, mut can: CAN) -> Tinymovr<CAN> {
         //let id = StandardId::new(
-                    //device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
+        //device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
         ////hprintln!("id: {:?}", id);
         //let frame = Frame::new_remote(id, 0).unwrap();
         //can.transmit(&frame).unwrap();
@@ -55,23 +56,21 @@ where CAN: Can,
 
         Tinymovr {
             can,
+            device_id,
             device_info: TinymovrDeviceInfo {
-                ..Default::default()
-                //device_id: u32::from_le_bytes(data[0..3].try_into().unwrap()),
-                //fw_major: data[4],
-                //fw_minor: data[5],
-                //fw_patch: data[6],
-                //temperature: data[7],
+                ..Default::default() //device_id: u32::from_le_bytes(data[0..3].try_into().unwrap()),
+                                     //fw_major: data[4],
+                                     //fw_minor: data[5],
+                                     //fw_patch: data[6],
+                                     //temperature: data[7],
             },
         }
     }
     pub fn bruh(&mut self) {
-        let device_id = 0u16;
-        let id = StandardId::new(
-                    device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
-        let frame = Frame::new_remote(id, 0).unwrap();
-        self.can.transmit(&frame).unwrap();
-        let device_info_frame = self.can.receive();
+        let id = StandardId::new(self.device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
+        let frame = Frame::new_remote(id, 1).unwrap();
+        block!(self.can.transmit(&frame)).unwrap();
+        let device_info_frame = block!(self.can.receive());
         hprintln!("device_info_frame: {:?}", device_info_frame.err());
     }
 }
