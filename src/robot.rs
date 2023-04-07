@@ -83,7 +83,7 @@ pub fn run() {
         // APB1 (PCLK1): 8MHz, Bit rate: 125kBit/s, Sample Point 87.5%
         // Value was calculated with http://www.bittiming.can-wiki.info/
         bxcan::Can::builder(can)
-            .set_bit_timing(0x001c_0002)
+            .set_bit_timing(0x001c_0003)
             .set_automatic_retransmit(false)
             .leave_disabled()
     };
@@ -97,10 +97,9 @@ pub fn run() {
 
     block!(can1.enable_non_blocking()).unwrap();
 
-    let mut tiny = Tinymovr::new(3, can1);
+    let mut tiny = Tinymovr::new(1, can1);
 
     loop {
-        delay.delay_ms(1000_u16);
         tiny.bruh();
     }
 }

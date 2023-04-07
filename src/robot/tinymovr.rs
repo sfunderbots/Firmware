@@ -68,9 +68,9 @@ where
     }
     pub fn bruh(&mut self) {
         let id = StandardId::new(self.device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
-        let frame = Frame::new_remote(id, 1).unwrap();
+        let frame = Frame::new_remote(id, 0).unwrap();
         block!(self.can.transmit(&frame)).unwrap();
         let device_info_frame = block!(self.can.receive());
-        hprintln!("device_info_frame: {:?}", device_info_frame.err());
+        hprintln!("device_info_frame: {:?}", device_info_frame.unwrap().data());
     }
 }
