@@ -97,9 +97,22 @@ pub fn run() {
 
     block!(can1.enable_non_blocking()).unwrap();
 
-    let mut tiny = Tinymovr::new(1, can1);
+    let mut tiny1 = Tinymovr::new(1, &mut can1);
+    let mut tiny2 = Tinymovr::new(2, &mut can1);
+    let mut tiny3 = Tinymovr::new(3, &mut can1);
+
+    hprintln!("------------ init ------------");
+    hprintln!("tiny1: {:?}", tiny1.device_info());
+    hprintln!("tiny2: {:?}", tiny2.device_info());
+    hprintln!("tiny3: {:?}", tiny3.device_info());
+
+    tiny1.calibrate(&mut can1);
+    delay.delay_us(1000_u16);
+    tiny2.calibrate(&mut can1);
+    delay.delay_us(1000_u16);
+    tiny3.calibrate(&mut can1);
 
     loop {
-        tiny.bruh();
+        delay.delay_us(1000_u16);
     }
 }

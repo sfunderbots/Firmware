@@ -24,7 +24,7 @@ const MOVE_TO_POS_WITH_VEL_LIMIT_EP_ID: u16 = 0x21;
 const SET_MAX_PLAN_ACCEL_DECEL_EP_ID: u16 = 0x22;
 const GET_MAX_PLAN_ACCEL_DECEL_EP_ID: u16 = 0x23;
 
-#[derive(Default)]
+#[derive(Default, Debug, Copy, Clone)]
 pub struct TinymovrDeviceInfo {
     pub device_id: u32,
     pub fw_major: u8,
@@ -33,44 +33,63 @@ pub struct TinymovrDeviceInfo {
     pub temperature: u8,
 }
 
-pub struct Tinymovr<CAN> {
-    can: CAN,
+pub struct Tinymovr {
     device_id: u16,
     pub device_info: TinymovrDeviceInfo,
 }
 
-impl<CAN> Tinymovr<CAN>
-where
-    CAN: Can,
-{
-    pub fn new(device_id: u16, mut can: CAN) -> Tinymovr<CAN> {
-        //let id = StandardId::new(
-        //device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
-        ////hprintln!("id: {:?}", id);
-        //let frame = Frame::new_remote(id, 0).unwrap();
-        //can.transmit(&frame).unwrap();
+impl Tinymovr {
+    pub fn new<CAN: Can>(device_id: u16, mut can: &mut CAN) -> Tinymovr {
+        let id = StandardId::new(device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
+        let frame = Frame::new_remote(id, 0).unwrap();
 
-        //let device_info_frame = can.receive();
-        //hprintln!("device_info_frame: {:?}", device_info_frame.err());
-        //let data = device_info_frame.unwrap().data();
+        block!(can.transmit(&frame)).unwrap();
+        let data = block!(can.receive()).unwrap();
+        let data = data.data();
 
         Tinymovr {
-            can,
             device_id,
             device_info: TinymovrDeviceInfo {
-                ..Default::default() //device_id: u32::from_le_bytes(data[0..3].try_into().unwrap()),
-                                     //fw_major: data[4],
-                                     //fw_minor: data[5],
-                                     //fw_patch: data[6],
-                                     //temperature: data[7],
+                device_id: data[0] as u32, // TODO FIX ME!
+                fw_major: data[4],
+                fw_minor: data[5],
+                fw_patch: data[6],
+                temperature: data[7],
             },
         }
     }
-    pub fn bruh(&mut self) {
-        let id = StandardId::new(self.device_id.shl(CAN_EP_SIZE) | GET_DEVICE_INFO_EP_ID).unwrap();
-        let frame = Frame::new_remote(id, 0).unwrap();
-        block!(self.can.transmit(&frame)).unwrap();
-        let device_info_frame = block!(self.can.receive());
-        hprintln!("device_info_frame: {:?}", device_info_frame.unwrap().data());
+
+    pub fn device_info(&self) -> TinymovrDeviceInfo {
+        self.device_info
+    }
+
+    fn set_state<CAN: Can>(&mut self, state: u8, mode: u8, can: &mut CAN) {
+        let id = StandardId::new(self.device_id.shl(CAN_EP_SIZE) | SET_STATE_EP_ID).unwrap();
+        let frame = Frame::new(id, &[state, mode]).unwrap();
+        block!(can.transmit(&frame)).unwrap();
+    }
+
+    pub fn idle<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(0, 0, can);
+    }
+
+    pub fn calibrate<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(1, 0, can);
+    }
+
+    pub fn cl_control<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(2, 0, can);
+    }
+
+    pub fn position_control<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(2, 2, can);
+    }
+
+    pub fn velocity_control<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(2, 1, can);
+    }
+
+    pub fn current_control<CAN: Can>(&mut self, can: &mut CAN) {
+        self.set_state(2, 0, can);
     }
 }
