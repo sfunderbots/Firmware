@@ -1,7 +1,11 @@
 use cortex_m::asm::delay;
+use cortex_m_semihosting::hprintln;
+use embedded_nrf24l01::{Configuration, Device};
+use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::{
     device::Peripherals,
+    spi,
     usb::{Peripheral, UsbBus},
 };
 use usb_device::prelude::*;
@@ -19,16 +23,54 @@ pub fn run() {
     let clocks = rcc
         .cfgr
         .use_hse(8.MHz())
-        .sysclk(48.MHz())
+        .sysclk(72.MHz())
         .pclk1(24.MHz())
         .freeze(&mut flash.acr);
 
+    hprintln!("Clocks: {:?}", clocks);
     assert!(clocks.usbclk_valid());
 
     let mut gpioa = device_peripherals.GPIOA.split();
+    let mut gpiob = device_peripherals.GPIOB.split();
     let mut gpioc = device_peripherals.GPIOC.split();
     let mut led = gpioc.pc13.into_push_pull_output(&mut gpioc.crh);
-    led.set_high(); // Turn off
+
+    led.set_high();
+
+    let ce = gpioa.pa8.into_push_pull_output(&mut gpioa.crh);
+    let sck = gpiob.pb13.into_alternate_push_pull(&mut gpiob.crh);
+    let miso = gpiob.pb14;
+    let mosi = gpiob.pb15.into_alternate_push_pull(&mut gpiob.crh);
+    let mut ncs = gpiob.pb12.into_push_pull_output(&mut gpiob.crh);
+    ncs.set_high();
+
+    let radio_spi = spi::Spi::spi2(
+        device_peripherals.SPI2,
+        (sck, miso, mosi),
+        spi::Mode {
+            polarity: spi::Polarity::IdleLow,
+            phase: spi::Phase::CaptureOnFirstTransition,
+        },
+        8.MHz(), // Recomended SPI clock frequency is 8MHz
+        clocks,
+    );
+
+    let nrf24 = NRF24L01::new(ce, ncs, radio_spi).unwrap();
+    let mut nrf = nrf24.tx().unwrap();
+    nrf.flush_tx().unwrap();
+    nrf.flush_rx().unwrap();
+    nrf.set_frequency(0x4c).unwrap();
+    nrf.set_auto_retransmit(0x0f, 0x0f).unwrap();
+    nrf.set_auto_ack(&[false; 6]).unwrap();
+    nrf.set_rf(&DataRate::R1Mbps, 3).unwrap();
+    nrf.set_crc(CrcMode::TwoBytes).unwrap();
+    nrf.set_tx_addr(&b"2Node"[..]).unwrap();
+
+    hprintln!("------");
+    hprintln!("ADDRWIDTH: {}", nrf.get_address_width().unwrap());
+    hprintln!("FREQ: {}", nrf.get_frequency().unwrap());
+    hprintln!("INTER: {}", nrf.get_interrupts().unwrap().0);
+    hprintln!("------");
 
     // Pull the D+ pin down to send a RESET condition to the USB bus.
     // This forced reset is needed only for development, without it host
@@ -54,6 +96,12 @@ pub fn run() {
         .build();
 
     loop {
+        if nrf.can_send().unwrap() {
+            nrf.send(&[1; 32]).unwrap();
+            hprintln!("Sent");
+        }
+
+        // wait for 1 second
         if !usb_dev.poll(&mut [&mut serial]) {
             continue;
         }

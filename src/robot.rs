@@ -1,20 +1,21 @@
 extern crate panic_semihosting;
 
+mod tinymovr;
+
 use bxcan::filter::Mask32;
 use bxcan::*;
 use cortex_m_semihosting::hprintln;
 
 use nb::block;
-use stm32f1xx_hal::device::{Peripherals, CAN1};
+use stm32f1xx_hal::device::Peripherals;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::timer::delay;
-use stm32f1xx_hal::{can, spi, timer};
-use stm32f1xx_hal::{can::Can, pac, prelude::*};
+use stm32f1xx_hal::{can, spi};
 use tinymovr::Tinymovr;
-use ws2812_spi::{Ws2812, MODE};
+use ws2812_spi::Ws2812;
 
+use embedded_nrf24l01::{Configuration, Device};
+use embedded_nrf24l01::{CrcMode, DataRate, NRF24L01};
 use smart_leds::{SmartLedsWrite, RGB8};
-mod tinymovr;
 
 pub fn run() {
     let cortex_peripherals = cortex_m::Peripherals::take().unwrap();
@@ -25,12 +26,14 @@ pub fn run() {
     // To meet CAN clock accuracy requirements an external crystal or ceramic
     // resonator must be used. The blue pill has a 8MHz external crystal.
     // Other boards might have a crystal with another frequency or none at all.
-    let clocks = rcc.cfgr.use_hse(8.MHz()).freeze(&mut flash.acr);
-    //.sysclk(72.MHz())
-    //.pclk1(24.MHz())
-    //.freeze(&mut flash.acr);
+    let clocks = rcc
+        .cfgr
+        .use_hse(8.MHz())
+        .sysclk(72.MHz())
+        .pclk1(24.MHz())
+        .freeze(&mut flash.acr);
 
-    //assert!(clocks.usbclk_valid());
+    assert!(clocks.usbclk_valid());
 
     // GPIO parts
     let mut gpioa = device_peripherals.GPIOA.split();
@@ -52,7 +55,7 @@ pub fn run() {
             polarity: spi::Polarity::IdleLow,
             phase: spi::Phase::CaptureOnFirstTransition,
         },
-        2.MHz(), // Recomended SPI clock frequency is 8MHz
+        8.MHz(), // Recomended SPI clock frequency is 8MHz
         clocks,
     );
 
@@ -84,7 +87,7 @@ pub fn run() {
         // Value was calculated with http://www.bittiming.can-wiki.info/
         bxcan::Can::builder(can)
             .set_bit_timing(0x001c_0003)
-            .set_automatic_retransmit(false)
+            .set_automatic_retransmit(true)
             .leave_disabled()
     };
 
@@ -95,22 +98,61 @@ pub fn run() {
     let mut delay = device_peripherals.TIM2.delay_us(&clocks);
     drop(filters);
 
+    // Split the peripheral into transmitter and receiver parts.
     block!(can1.enable_non_blocking()).unwrap();
+
+    let nrf24 = NRF24L01::new(ce, ncs, radio_spi).unwrap();
+    let mut nrf = nrf24.tx().unwrap();
+    nrf.flush_tx().unwrap();
+    nrf.flush_rx().unwrap();
+    nrf.set_frequency(0x4c).unwrap();
+    nrf.set_auto_retransmit(0x0f, 0x0f).unwrap();
+    nrf.set_auto_ack(&[false; 6]).unwrap();
+    nrf.set_rf(&DataRate::R1Mbps, 3).unwrap();
+    nrf.set_crc(CrcMode::TwoBytes).unwrap();
+    nrf.set_tx_addr(&b"2Node"[..]).unwrap();
+
+    hprintln!("------");
+    hprintln!("ADDRWIDTH: {}", nrf.get_address_width().unwrap());
+    hprintln!("FREQ: {}", nrf.get_frequency().unwrap());
+    hprintln!("INTER: {}", nrf.get_interrupts().unwrap().0);
+    hprintln!("------");
 
     let mut tiny1 = Tinymovr::new(1, &mut can1);
     let mut tiny2 = Tinymovr::new(2, &mut can1);
     let mut tiny3 = Tinymovr::new(3, &mut can1);
 
-    hprintln!("------------ init ------------");
-    hprintln!("tiny1: {:?}", tiny1.device_info());
-    hprintln!("tiny2: {:?}", tiny2.device_info());
-    hprintln!("tiny3: {:?}", tiny3.device_info());
+    //tiny1.calibrate(&mut can1);
+    //tiny2.calibrate(&mut can1);
+    //tiny3.calibrate(&mut can1);
 
-    tiny1.calibrate(&mut can1);
-    delay.delay_us(1000_u16);
-    tiny2.calibrate(&mut can1);
-    delay.delay_us(1000_u16);
-    tiny3.calibrate(&mut can1);
+    //delay.delay_ms(15000_u16);
+
+    hprintln!("Calibration done");
+    tiny1.velocity_control(&mut can1);
+    hprintln!("Velocity control done");
+    tiny2.velocity_control(&mut can1);
+    hprintln!("Velocity control done");
+    tiny3.velocity_control(&mut can1);
+    hprintln!("Velocity control done");
+
+    delay.delay_ms(1000_u16);
+    tiny1.set_vel_integrator_params(0.02, 300.0, &mut can1);
+    tiny2.set_vel_integrator_params(0.02, 300.0, &mut can1);
+    tiny3.set_vel_integrator_params(0.02, 300.0, &mut can1);
+
+    delay.delay_ms(1000_u16);
+
+    hprintln!("Setting vel setpoint");
+    tiny1.set_vel_setpoint(500000.0, &mut can1);
+    tiny2.set_vel_setpoint(500000.0, &mut can1);
+    tiny3.set_vel_setpoint(500000.0, &mut can1);
+
+    delay.delay_ms(5000_u16);
+
+    tiny1.set_vel_setpoint(0.0, &mut can1);
+    tiny2.set_vel_setpoint(0.0, &mut can1);
+    tiny3.set_vel_setpoint(0.0, &mut can1);
 
     loop {
         delay.delay_us(1000_u16);
