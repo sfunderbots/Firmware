@@ -45,14 +45,14 @@ impl From<WheelVelocity> for LocalVelocity {
         let robot_radius = 18.0;
 
         let i1: f64 = 1.0 / (cos_p + 1.0);
-        let i2: f64 = -1.0 / (2 * cos_p + 2);
-        let j = 1 / (2.0 * sin_p);
+        let i2: f64 = -1.0 / (2.0 * cos_p + 2.0);
+        let j = 1.0 / (2.0 * sin_p);
         let k1 = cos_p / (robot_radius * cos_p + robot_radius);
         let k2 = 1.0 / (2.0 * robot_radius * cos_p + 2.0 * robot_radius);
 
         let wheel_to_local = Matrix3::new(
             i1, i2, i2,
-            0, j, -j,
+            0.0, j, -j,
             k1, k2, k2
         );
 
