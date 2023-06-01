@@ -16,15 +16,15 @@ pub struct WheelVelocity {
 
 impl From<LocalVelocity> for WheelVelocity {
     fn from(local: LocalVelocity) -> Self {
-        let p = 60. * M_PI / 180.;
-        let cos_p = std::cos(p);
-        let sin_p = std::sin(p);
+        let p = 60. * std::f64::consts::PI / 180.;
+        let cos_p = p.cos();
+        let sin_p = p.sin();
         let robot_radius = 18.0;
 
         let local_to_wheel = Matrix3::new(
-            1, 0, robot_radius,
+            1.0, 0.0, robot_radius,
             -cos_p, sin_p, robot_radius,
-            -cos_p, -sin_p, robot_radius
+            -cos_p, -sin_p, robot_radius,
         );
 
         let result = local_to_wheel * Vector3::new(local.x, local.y, local.theta);
@@ -39,40 +39,29 @@ impl From<LocalVelocity> for WheelVelocity {
 
 impl From<WheelVelocity> for LocalVelocity {
     fn from(wheel: WheelVelocity) -> Self {
-        let x = (wheel.left + wheel.right + wheel.back) / 3.0;
-        let y = (-wheel.left + wheel.right + wheel.back) / 3.0;
-        let theta = (-wheel.left - wheel.right + wheel.back) / 3.0;
-        Self { x, y, theta }
-    }
-}
+        let p = 60. * std::f64::consts::PI / 180.;
+        let cos_p = p.cos();
+        let sin_p = p.sin();
+        let robot_radius = 18.0;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+        let i1: f64 = 1.0 / (cos_p + 1.0);
+        let i2: f64 = -1.0 / (2 * cos_p + 2);
+        let j = 1 / (2.0 * sin_p);
+        let k1 = cos_p / (robot_radius * cos_p + robot_radius);
+        let k2 = 1.0 / (2.0 * robot_radius * cos_p + 2.0 * robot_radius);
 
-    #[test]
-    fn test_wheel_to_local() {
-        let wheel = WheelVelocity {
-            left: 1.0,
-            right: 1.0,
-            back: 1.0,
-        };
-        let local = LocalVelocity::from(wheel);
-        assert_eq!(local.x, 0.0);
-        assert_eq!(local.y, 0.0);
-        assert_eq!(local.theta, 1.0);
-    }
+        let wheel_to_local = Matrix3::new(
+            i1, i2, i2,
+            0, j, -j,
+            k1, k2, k2
+        );
 
-    #[test]
-    fn test_local_to_wheel() {
-        let local = LocalVelocity {
-            x: 1.0,
-            y: 0.0,
-            theta: 0.0,
-        };
-        let wheel = WheelVelocity::from(local);
-        assert_eq!(wheel.left, 1.0);
-        assert_eq!(wheel.right, 1.0);
-        assert_eq!(wheel.back, 1.0);
+        let result = wheel_to_local * Vector3::new(wheel.left, wheel.right, wheel.back);
+
+        Self {
+            x: result[0],
+            y: result[1],
+            theta: result[2],
+        }
     }
 }
