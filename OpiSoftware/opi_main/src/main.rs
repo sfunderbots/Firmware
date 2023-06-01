@@ -1,5 +1,7 @@
 mod tinymovr;
+mod wheel_conversion;
 use tinymovr::Tinymovr;
+use wheel_conversion::{LocalVelocity, WheelVelocity};
 
 use anyhow::Context;
 use socketcan::{CanFrame, CanSocket, Frame, Socket};
