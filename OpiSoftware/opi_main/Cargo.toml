@@ -9,7 +9,16 @@ edition = "2021"
 anyhow = "1.0.71"
 embedded-can = "0.4.1"
 embedded-hal = "0.2.7"
-gilrs = "0.10.2"
 linux-embedded-hal = "0.3.2"
 nalgebra = "0.32.2"
 socketcan = "2.0.0"
+
+[dependencies.ftdi-embedded-hal]
+version = "0.15.1"
+features = ["libftd2xx", "libftd2xx-static"]
+
+[dependencies.libftd2xx]
+version = "0.32.2"
+# statically link the vendor library, defaults to dynamic if not set
+# this will make things "just work" on Linux and Windows
+features = ["static"]
