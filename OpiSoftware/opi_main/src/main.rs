@@ -1,22 +1,67 @@
 mod tinymovr;
 mod wheel_conversion;
+use embedded_graphics::prelude::{WebColors, RgbColor};
+use embedded_hal::spi::FullDuplex;
 use tinymovr::Tinymovr;
 use wheel_conversion::{LocalVelocity, WheelVelocity};
 use anyhow::Context;
 use socketcan::{CanFrame, CanSocket, Frame, Socket};
 use std::env;
 use ftdi_embedded_hal as hal;
+use libftd2xx::{Ftdi, FtdiCommon};
+use libftd2xx::list_devices;
+use embedded_graphics::{
+    pixelcolor::Rgb565,
+    primitives::{Circle, PrimitiveStyleBuilder, Rectangle, Triangle},
+};
+use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
+use embedded_hal::PwmPin;
+use linux_embedded_hal::Delay;
+use display_interface_spi::SPIInterface;
+use embedded_graphics::draw_target::DrawTarget;
+
+struct PwmDud;
+
+impl PwmPin for PwmDud {
+    type Duty = u16;
+
+    fn disable(&mut self) {}
+    fn enable(&mut self) {}
+    fn get_duty(&self) -> Self::Duty { 0 }
+    fn get_max_duty(&self) -> Self::Duty { 0 }
+    fn set_duty(&mut self, _duty: Self::Duty) {}
+}
 
 fn main() -> anyhow::Result<()> {
-    println!("Hello, world!");
     
-    let device = libftd2xx::Ft2232h::with_description("Single RS232-HS A")?;
+    // sudo rmmod ftdi_sio
+    // sudo rmmod usbserial
+    
+    let device = libftd2xx::Ft232h::with_description("Single RS232-HS")?;
+    let hal = hal::FtHal::init_freq(device, 30_000_000)?;
+    let mut spi = hal.spi()?;
+    let spi_cs = hal.ad3()?;
+    let dc = hal.ad4()?;
+    let rst = hal.ad5()?;
 
-    //let mut sock = CanSocket::open("can0")
-        //.with_context(|| format!("Failed to open socket on interface can0"))?;
-    //let device = hal::find_by_vid_pid(0x0403, 0x6014)
-        //.interface(hal::Interface::A)
-        //.open()?;
+    let spi_interface = SPIInterface::new(spi, dc, spi_cs);
+    let pwm_dud = PwmDud;
+    let mut delay = linux_embedded_hal::Delay;
+
+    let mut display = gc9a01a::GC9A01A::new(spi_interface, rst, pwm_dud);
+    display.reset(&mut delay).unwrap();
+    // Initialize registers
+    display.initialize(&mut delay).unwrap();
+    // Fill screen with single color
+    display.clear(Rgb565::WHITE).unwrap();
+    println!("ASDASD");
+    display.clear(Rgb565::RED).unwrap();
+    println!("GOT HERE");
+
+
+    let mut sock = CanSocket::open("can0")
+        .with_context(|| format!("Failed to open socket on interface can0"))?;
+
     
     //let hal = hal::FtHal::init_freq(device, 3_000_000)?;
     //let spi = hal.spi()?;
