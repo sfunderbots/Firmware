@@ -1,7 +1,11 @@
 mod tinymovr;
 mod wheel_conversion;
+mod buffered_f232h;
+use buffered_f232h::BufferedSpi;
 use embedded_graphics::prelude::{WebColors, RgbColor};
 use embedded_hal::spi::FullDuplex;
+use hal::eh1::spi::SpiBusWrite;
+use hal::eh1::digital::OutputPin;
 use tinymovr::Tinymovr;
 use wheel_conversion::{LocalVelocity, WheelVelocity};
 use anyhow::Context;
@@ -10,10 +14,18 @@ use std::env;
 use ftdi_embedded_hal as hal;
 use libftd2xx::{Ftdi, FtdiCommon};
 use libftd2xx::list_devices;
+use embedded_graphics::prelude::*;
+use embedded_graphics::*;
 use embedded_graphics::{
     pixelcolor::Rgb565,
     primitives::{Circle, PrimitiveStyleBuilder, Rectangle, Triangle},
 };
+    use embedded_graphics::{
+        mono_font::{ascii::*, MonoTextStyle},
+        prelude::*,
+        text::{Alignment, Text},
+    };
+use embedded_graphics::text::*;
 use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
 use embedded_hal::PwmPin;
 use linux_embedded_hal::Delay;
@@ -40,23 +52,42 @@ fn main() -> anyhow::Result<()> {
     let device = libftd2xx::Ft232h::with_description("Single RS232-HS")?;
     let hal = hal::FtHal::init_freq(device, 30_000_000)?;
     let mut spi = hal.spi()?;
-    let spi_cs = hal.ad3()?;
-    let dc = hal.ad4()?;
+    let mut buff_spi = BufferedSpi::new(spi);
+    let mut spi_cs = hal.ad3()?;
+    let mut dc = hal.ad4()?;
     let rst = hal.ad5()?;
+    spi_cs.set_low()?;
+    dc.set_high()?;
 
-    let spi_interface = SPIInterface::new(spi, dc, spi_cs);
+
+    let spi_interface = SPIInterface::new(buff_spi, dc, spi_cs);
+
     let pwm_dud = PwmDud;
     let mut delay = linux_embedded_hal::Delay;
 
     let mut display = gc9a01a::GC9A01A::new(spi_interface, rst, pwm_dud);
-    display.reset(&mut delay).unwrap();
+    //display.reset(&mut delay).unwrap();
     // Initialize registers
-    display.initialize(&mut delay).unwrap();
-    // Fill screen with single color
-    display.clear(Rgb565::WHITE).unwrap();
-    println!("ASDASD");
-    display.clear(Rgb565::RED).unwrap();
-    println!("GOT HERE");
+    //display.initialize(&mut delay).unwrap();
+    loop {
+        display.clear(Rgb565::WHITE);
+        display.clear(Rgb565::BLUE);
+        display.clear(Rgb565::RED);
+    }
+
+    // Create a new character style
+    let style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
+
+    // Create a text at position (20, 30) and draw it using the previously defined style
+    Text::with_alignment(
+        "First line\nSecond line",
+        Point::new(100, 100),
+        style,
+        Alignment::Center,
+    )
+    .draw(&mut display)
+    .unwrap();
+
 
 
     let mut sock = CanSocket::open("can0")

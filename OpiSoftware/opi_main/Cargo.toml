@@ -17,6 +17,7 @@ embedded-graphics = "0.8.0"
 display-interface = "0.4.1"
 sysfs-pwm = "0.1.0"
 display-interface-spi = "0.4.1"
+chrono = "0.4.26"
 
 [dependencies.ftdi-embedded-hal]
 version = "0.15.1"
