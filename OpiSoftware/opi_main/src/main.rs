@@ -1,46 +1,72 @@
 mod tinymovr;
 mod wheel_conversion;
-use embedded_graphics::prelude::{WebColors, RgbColor};
+use anyhow::Context;
+use anyhow::Context;
+use embedded_graphics::prelude::{RgbColor, WebColors};
 use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::digital::v2::PinState;
-use linux_embedded_hal::spidev::{SpidevOptions, SpiModeFlags};
-use tinymovr::Tinymovr;
-use wheel_conversion::{LocalVelocity, WheelVelocity};
-use anyhow::Context;
+use linux_embedded_hal::spidev::{SpiModeFlags, SpidevOptions};
+use socketcan::{CanFrame, CanSocket, Frame, Socket};
 use socketcan::{CanFrame, CanSocket, Frame, Socket};
 use std::env;
+use tinymovr::Tinymovr;
+
+use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
+use display_interface_spi::SPIInterface;
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::prelude::*;
+use embedded_graphics::prelude::{RgbColor, WebColors};
+use embedded_graphics::text::*;
 use embedded_graphics::*;
+use embedded_graphics::{image::Image, prelude::*};
+use embedded_graphics::{
+    mono_font::{ascii::*, MonoTextStyle},
+    prelude::*,
+    text::{Alignment, Text},
+};
 use embedded_graphics::{
     pixelcolor::Rgb565,
     primitives::{Circle, PrimitiveStyleBuilder, Rectangle, Triangle},
 };
-    use embedded_graphics::{
-        mono_font::{ascii::*, MonoTextStyle},
-        prelude::*,
-        text::{Alignment, Text},
-    };
-use embedded_graphics::text::*;
-use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
+use embedded_hal::digital::v2::OutputPin;
 use embedded_hal::PwmPin;
 use linux_embedded_hal::{Delay, Pin, Spidev};
-use display_interface_spi::SPIInterface;
-use embedded_graphics::draw_target::DrawTarget;
 use rppal::gpio::Gpio;
-use embedded_graphics::{image::Image, prelude::*};
 use tinybmp::Bmp;
 
 struct PwmDud;
 use embedded_graphics_framebuf::FrameBuf;
 
+use linux_embedded_hal::Delay;
+use rppal::spi::{Bus, Mode, SlaveSelect, Spi};
+use std::env;
+use tinymovr::Tinymovr;
+use wheel_conversion::{LocalVelocity, WheelVelocity};
 
-impl PwmPin for PwmDud {
+struct Dud;
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    pub speed: f32,
+    #[arg(short, long)]
+    pub calibrate: bool,
+}
+
+impl PwmPin for Dud {
     type Duty = u16;
 
     fn disable(&mut self) {}
     fn enable(&mut self) {}
-    fn get_duty(&self) -> Self::Duty { 0 }
-    fn get_max_duty(&self) -> Self::Duty { 0 }
+    fn get_duty(&self) -> Self::Duty {
+        0
+    }
+    fn get_max_duty(&self) -> Self::Duty {
+        0
+    }
     fn set_duty(&mut self, _duty: Self::Duty) {}
 }
 
@@ -49,18 +75,20 @@ struct GpioDud;
 impl OutputPin for GpioDud {
     type Error = ();
 
-    fn set_low(&mut self) -> Result<(), Self::Error> { Ok(()) }
-    fn set_high(&mut self) -> Result<(), Self::Error> { Ok(()) }
-    fn set_state(&mut self, state: PinState) -> Result<(), Self::Error> { Ok(()) }
+    fn set_low(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn set_high(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+    fn set_state(&mut self, state: PinState) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 fn main() -> anyhow::Result<()> {
-    
     let gpio = Gpio::new()?;
-    //let device = libftd2xx::Ft232h::with_description("Single RS232-HS")?;
-    //let hal = hal::FtHal::init_freq(device, 30_000_000)?;
-    //let mut spi = hal.spi()?;
-    //let mut spi_device = BufferedSpi::new(spi);
+    let args = Args::parse();
     let options = SpidevOptions::new()
         .max_speed_hz(62_500_000)
         .mode(SpiModeFlags::SPI_MODE_0)
@@ -102,126 +130,83 @@ fn main() -> anyhow::Result<()> {
     let blue_style = MonoTextStyle::new(&FONT_10X20, Rgb565::BLUE);
     let red_style = MonoTextStyle::new(&FONT_10X20, Rgb565::RED);
 
-    // Create a text at position (20, 30) and draw it using the previously defined style
-    Text::with_alignment(
-        "Hello Rust!",
-        Point::new(100, 100),
-        blue_style,
-        Alignment::Center,
-    )
-    .draw(&mut display_left)
-    .unwrap();
+    let mut data_left = [Rgb565::WHITE; 240 * 240];
+    let mut data_right = [Rgb565::WHITE; 240 * 240];
 
-    Text::with_alignment(
-        "Hello Rust!",
-        Point::new(100, 100),
-        red_style,
-        Alignment::Center,
-    )
-    .draw(&mut display_right)
-    .unwrap();
+    // load current time
+    let now = std::time::Instant::now();
+    if args.run_display {
+        loop {
+            let mut fbuf_left = FrameBuf::new(&mut data_left, 240, 240);
+            let mut fbuf_right = FrameBuf::new(&mut data_right, 240, 240);
 
-let mut data_left = [Rgb565::WHITE; 240 * 240];
-let mut data_right = [Rgb565::WHITE; 240 * 240];
+            fbuf_left.reset();
+            fbuf_right.reset();
 
-        // load current time
-        let now = std::time::Instant::now();
-    loop {
-        let mut fbuf_left = FrameBuf::new(&mut data_left, 240, 240);
-        let mut fbuf_right = FrameBuf::new(&mut data_right, 240, 240);
+            Text::with_alignment(
+                &format!("Time: {:?}", now.elapsed().as_millis()),
+                Point::new(100, 100),
+                blue_style,
+                Alignment::Center,
+            )
+            .draw(&mut fbuf_left)
+            .unwrap();
 
-        fbuf_left.reset();
-        fbuf_right.reset();
+            Text::with_alignment(
+                &format!("Time: {:?}", now.elapsed().as_millis()),
+                Point::new(100, 100),
+                red_style,
+                Alignment::Center,
+            )
+            .draw(&mut fbuf_right)
+            .unwrap();
 
-        Text::with_alignment(
-            &format!("Time: {:?}", now.elapsed().as_millis()),
-            Point::new(100, 100),
-            blue_style,
-            Alignment::Center,
-        )
-        .draw(&mut fbuf_left)
-        .unwrap();
+            let left_area = Rectangle::new(Point::new(0, 0), fbuf_left.size());
+            let right_area = Rectangle::new(Point::new(0, 0), fbuf_right.size());
 
-        Text::with_alignment(
-            &format!("Time: {:?}", now.elapsed().as_millis()),
-            Point::new(100, 100),
-            red_style,
-            Alignment::Center,
-        )
-        .draw(&mut fbuf_right)
-        .unwrap();
+            display_left.fill_contiguous(&left_area, data_left).unwrap();
+            display_right
+                .fill_contiguous(&right_area, data_right)
+                .unwrap();
+        }
+    }
+    let mut can = CanSocket::open("can0")
+        .with_context(|| format!("Failed to open socket on interface can0"))?;
+    let mut tiny1 = Tinymovr::new(1, &mut can);
+    let mut tiny2 = Tinymovr::new(2, &mut can);
+    let mut tiny3 = Tinymovr::new(3, &mut can);
 
-        let left_area = Rectangle::new(Point::new(0, 0), fbuf_left.size());
-        let right_area = Rectangle::new(Point::new(0, 0), fbuf_right.size());
-
-        display_left.fill_contiguous(&left_area, data_left).unwrap();
-        display_right.fill_contiguous(&right_area, data_right).unwrap();
+    if args.calibrate {
+        tiny1.calibrate(&mut can);
+        tiny2.calibrate(&mut can);
+        tiny3.calibrate(&mut can);
+        return Ok(());
     }
 
-    //let mut sock = CanSocket::open("can0")
-        //.with_context(|| format!("Failed to open socket on interface can0"))?;
+    tiny1.velocity_control(&mut can);
+    tiny2.velocity_control(&mut can);
+    tiny3.velocity_control(&mut can);
 
-    //let hal = hal::FtHal::init_freq(device, 3_000_000)?;
-    //let spi = hal.spi()?;
-    //let gpio = hal.ad6();
+    println!("Device info: {:?}", tiny1.device_info());
+    println!("Device info: {:?}", tiny2.device_info());
+    println!("Device info: {:?}", tiny3.device_info());
 
-    //println!("Socket opened");
+    tiny1.set_vel_integrator_params(0.02, 300.0, &mut can);
+    tiny2.set_vel_integrator_params(0.02, 300.0, &mut can);
+    tiny3.set_vel_integrator_params(0.02, 300.0, &mut can);
 
-    //let mut tiny1 = Tinymovr::new(1, &mut sock);
-    //let mut tiny2 = Tinymovr::new(2, &mut sock);
-    //let mut tiny3 = Tinymovr::new(3, &mut sock);
+    tiny1.set_vel_setpoint(args.speed, &mut can);
+    tiny2.set_vel_setpoint(args.speed, &mut can);
+    tiny3.set_vel_setpoint(args.speed, &mut can);
 
-    //let mut gilrs = Gilrs::new().unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
-    //// Iterate over all connected gamepads
-    //for (_id, gamepad) in gilrs.gamepads() {
-        //println!("{} is {:?}", gamepad.name(), gamepad.power_info());
-    //}
+    tiny1.set_vel_setpoint(0.0, &mut can);
+    tiny2.set_vel_setpoint(0.0, &mut can);
+    tiny3.set_vel_setpoint(0.0, &mut can);
 
-    //let mut active_gamepad = None;
-
-    //loop {
-        //// Examine new events
-        //while let Some(Event { id, event, time }) = gilrs.next_event() {
-            //println!("{:?} New event from {}: {:?}", time, id, event);
-            //active_gamepad = Some(id);
-        //}
-
-        //// You can also use cached gamepad state
-        //if let Some(gamepad) = active_gamepad.map(|id| gilrs.gamepad(id)) {
-            //if gamepad.is_pressed(Button::South) {
-                //println!("Button South is pressed (XBox - A, PS - X)");
-            //}
-        //}
-    //}
-
-    //println!("START CALIBRATION");
-    //tiny1.calibrate(&mut sock);
-    //tiny2.calibrate(&mut sock);
-    //tiny3.calibrate(&mut sock);
-
-    //tiny1.velocity_control(&mut sock);
-    //tiny2.velocity_control(&mut sock);
-    //tiny3.velocity_control(&mut sock);
-
-    //// Sleep
-    //tiny1.set_vel_integrator_params(0.02, 300.0, &mut sock);
-    //tiny2.set_vel_integrator_params(0.02, 300.0, &mut sock);
-    //tiny3.set_vel_integrator_params(0.02, 300.0, &mut sock);
-
-    //tiny1.set_vel_setpoint(500000.0, &mut sock);
-    //tiny2.set_vel_setpoint(500000.0, &mut sock);
-    //tiny3.set_vel_setpoint(500000.0, &mut sock);
-
-    //std::thread::sleep(std::time::Duration::from_secs(5));
-
-    //tiny1.set_vel_setpoint(0.0, &mut sock);
-    //tiny2.set_vel_setpoint(0.0, &mut sock);
-    //tiny3.set_vel_setpoint(0.0, &mut sock);
-
-    //loop {
-        //std::thread::sleep(std::time::Duration::from_secs(5));
-    //}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
     Ok(())
 }
-

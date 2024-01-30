@@ -18,6 +18,7 @@ display-interface = "0.4.1"
 sysfs-pwm = "0.1.0"
 display-interface-spi = "0.4.1"
 chrono = "0.4.26"
+<<<<<<< Updated upstream
 rppal = { version = "0.16.1", features = ["hal"] }
 tinybmp = "0.5.0"
 embedded-graphics-framebuf = "0.5.0"
@@ -31,3 +32,9 @@ embedded-graphics-framebuf = "0.5.0"
 # statically link the vendor library, defaults to dynamic if not set
 # this will make things "just work" on Linux and Windows
 #features = ["static"]
+=======
+rppal = { version = "0.17.1", features = ["embedded-hal-0"] }
+mcp2515 = "0.2.2"
+clap = { version = "4.4.18", features = ["derive"] }
+
+>>>>>>> Stashed changes
