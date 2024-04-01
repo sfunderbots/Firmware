@@ -14,12 +14,15 @@ Commander command = Commander(Serial);
 float target_velocity = 0;
 void doTarget(char* cmd) { command.scalar(&target_velocity, cmd); }
 
+// Fixed point velocity message - 
 typedef struct velocityMessage {
-  int16_t m1_velocity_rpm;
-  int16_t m2_velocity_rpm;
-  int16_t m3_velocity_rpm;
-  int16_t m4_velocity_rpm;
+  int16_t motor_velocity_radps_2dec[4];
 } velocityMessage;
+
+// ID of the motor this code will run on/control [1 indexed]
+#define MOTOR_ID 1
+
+#define VELOCITY_COMMAND_ID 0x123
 
 void setupCurrentSense() {
     currentSense.linkDriver(&driver);
@@ -89,6 +92,54 @@ void setupMotor() {
 
 }
 
+void process_can_message() {
+  if (CAN.available() > 0)
+  {
+      CanMsg const rxMsg = CAN.read();
+
+      Serial.print("polling read: ");
+      if (rxMsg.isExtendedId())
+      {
+          Serial.print(rxMsg.getExtendedId(), HEX);
+          Serial.println(" Extended ✅");
+      }
+      else
+      {
+          Serial.print(rxMsg.getStandardId(), HEX);
+          Serial.println(" Standard ✅");
+          
+      }
+      Serial.println("I got this message: ");
+      if (rxMsg.getStandardId() == VELOCITY_COMMAND_ID)
+      {
+      
+        for (uint8_t i = 0; i < rxMsg.data_length; i++)
+        {
+            Serial.print(rxMsg.data[i], HEX);
+            Serial.print(" ");
+        }
+        Serial.println("");
+        velocityMessage velMsg =  {0};
+        // Copy into velocityMessage struct
+        memcpy(&velMsg, rxMsg.data, 8);
+
+        for (uint8_t i = 0; i < 4; i++)
+        {
+            Serial.print(velMsg.motor_velocity_radps_2dec[i]/100.0f);
+            Serial.print(" ");
+        }
+
+        // Set target velocity for the motor that MOTOR_ID is set to
+        target_velocity = velMsg.motor_velocity_radps_2dec[MOTOR_ID - 1] / 100.0f;
+      }
+      else
+      {
+          Serial.println("Unknown message ID");
+      }
+      
+  }
+}
+
 
 void setup() {
 
@@ -99,7 +150,7 @@ void setup() {
 
     CAN.logTo(&Serial);
 
-    CAN.begin(125000);
+    CAN.begin(250000);
 
 
     // configure i2C
@@ -133,31 +184,10 @@ void loop() {
   //   Serial.print("\t");
   //   Serial.println(sensor.getVelocity());
 
-  // Check if we got a CAN message
-  if (CAN.available() > 0)
-  {
-      CanMsg const rxMsg = CAN.read();
+    // Check if we got a CAN message - set target velocity if valid
+    process_can_message();
 
-      Serial.print("polling read: ");
-      if (rxMsg.isExtendedId())
-      {
-          Serial.print(rxMsg.getExtendedId(), HEX);
-          Serial.println(" Extended ✅");
-      }
-      else
-      {
-          Serial.print(rxMsg.getStandardId(), HEX);
-          Serial.println(" Standard ✅");
-          
-      }
-      Serial.println("I got this message: ");
-
-      for (uint8_t i = 0; i < rxMsg.data_length; i++)
-      {
-          Serial.print(rxMsg.data[i], HEX);
-          Serial.print(" ");
-      }
-  }
+    
     motor.loopFOC();
     motor.move(target_velocity);
 

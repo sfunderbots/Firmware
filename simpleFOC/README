@@ -1,0 +1,26 @@
+
+This directory is intended for PlatformIO Test Runner and project tests.
+
+Unit Testing is a software testing method by which individual units of
+source code, sets of one or more MCU program modules together with associated
+control data, usage procedures, and operating procedures, are tested to
+determine whether they are fit for use. Unit testing finds problems early
+in the development cycle.
+
+More information about PlatformIO Unit Testing:
+- https://docs.platformio.org/en/latest/advanced/unit-testing/index.html
+
+
+# SimpleFOC Robot Firmware for ST disco_b_g431b_esc1
+
+This firmware runs on the disco_b_g431b_esc1 eval board ESC.
+
+It takes a velocity command over CAN and writes the appropriate target velocity to the motor.
+
+Velocity message format
+
+[CAN_ID=123][vel_1_lsb, vel_1_msb, vel_2_lsb, vel_2_msb, vel_3_lsb, vel_3_msb, vel_4_lsb, vel_4_msb]
+
+Each velocity is a 16bit 2-decimal fixed point value in rad/s. 
+
+So a velocity of 10 rad/s would be 10 * 100 = 1000 = 0x3E8 = [0xE8, 0x03] as the over the wire format 
