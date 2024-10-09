@@ -19,8 +19,12 @@ typedef struct velocityMessage {
   int16_t motor_velocity_radps_2dec[4];
 } velocityMessage;
 
+// Timeout stuff
+unsigned long last_message_time = 0;  // to store the time of the last valid CAN message
+const unsigned long message_timeout = 1000;  // 1 second timeout
+
 // ID of the motor this code will run on/control [1 indexed]
-#define MOTOR_ID 1
+#define MOTOR_ID 4
 
 #define VELOCITY_COMMAND_ID 0x123
 
@@ -131,6 +135,9 @@ void process_can_message() {
 
         // Set target velocity for the motor that MOTOR_ID is set to
         target_velocity = velMsg.motor_velocity_radps_2dec[MOTOR_ID - 1] / 100.0f;
+
+        // Update the last message time since a valid message was received
+        last_message_time = millis();
       }
       else
       {
@@ -145,8 +152,12 @@ void setup() {
 
     // Start serial communication
     Serial.begin(115200);
+    Serial.println("hello ");
 
     // Configure CAN Bus
+
+    // Set CAN Termination to off
+    digitalWrite(A_CAN_TERM, LOW);
 
     CAN.logTo(&Serial);
 
@@ -187,6 +198,10 @@ void loop() {
     // Check if we got a CAN message - set target velocity if valid
     process_can_message();
 
+    // Check if the timeout has expired
+    if (millis() - last_message_time > message_timeout) {
+        target_velocity = 0;  // Set velocity to 0 if no CAN message for 1 second
+    }
     
     motor.loopFOC();
     motor.move(target_velocity);
