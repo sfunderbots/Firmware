@@ -4,5 +4,10 @@ CFLAGS := -Wall -O2
 hello: hello.c
 	$(CC) $(CFLAGS) $^ -o $@
 
+imu_eth: imu_eth.c
+	$(CC) $(CFLAGS) $^ -o $@
+
+all: hello imu_eth
+
 clean:
-	rm -f hello
+	rm -f hello imu_eth
