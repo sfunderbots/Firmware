@@ -1,6 +1,6 @@
 # IMU to Raw Ethernet Publisher (Luckfox Pico Pro)
 
-This program configures an LSM6DSOX over Linux `i2c-dev`, polls one sample, timestamps it, and sends one UDP packet per sample.
+This program configures an LSM6DSO32 over Linux `i2c-dev`, polls one sample, timestamps it, and sends one UDP packet per sample.
 
 ## Build
 
