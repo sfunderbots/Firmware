@@ -1,6 +1,6 @@
 # IMU to Raw Ethernet Publisher (Luckfox Pico Pro)
 
-This program configures an LSM6DSO32 over Linux `i2c-dev`, polls one sample, timestamps it, and sends one UDP packet per sample.
+This program configures an LSM6DSOX over Linux `i2c-dev`, polls one sample, timestamps it, and sends one UDP packet per sample.
 
 ## Build
 
@@ -8,6 +8,30 @@ This program configures an LSM6DSO32 over Linux `i2c-dev`, polls one sample, tim
 cd /Users/vikrambhat/Firmware/sensor_board
 make imu_eth
 ```
+
+## Build From macOS
+
+The bundled Rockchip compiler in this folder is a Linux `x86_64` binary, so it will not run directly on macOS, including Apple Silicon with Rosetta.
+
+Use Docker to run the Linux toolchain instead:
+
+```sh
+cd /Users/vikrambhat/Firmware/sensor_board
+./docker-build.sh
+```
+
+Or via `make`:
+
+```sh
+cd /Users/vikrambhat/Firmware/sensor_board
+make docker-build
+```
+
+Notes:
+
+- Requires Docker Desktop or another Docker engine on macOS.
+- The script uses `ubuntu:22.04` and `--platform linux/amd64` by default.
+- The built output is still written into this folder as `./imu_eth`.
 
 ## Run
 

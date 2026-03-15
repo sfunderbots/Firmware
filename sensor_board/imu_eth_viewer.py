@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import itertools
 import socket
 import struct
 import threading
@@ -25,7 +26,16 @@ class SampleStore:
         with self._lock:
             if count <= 0:
                 return []
-            return list(self._samples)[-count:]
+            return list(itertools.islice(self._samples, max(0, len(self._samples) - count), None))
+
+    def since_seq(self, seq: int, limit: int) -> List[Dict]:
+        with self._lock:
+            if limit <= 0:
+                return []
+            if seq < 0:
+                return list(itertools.islice(self._samples, max(0, len(self._samples) - limit), None))
+            samples = [sample for sample in self._samples if sample["seq"] > seq]
+            return samples[:limit]
 
 def parse_payload(payload: bytes) -> Dict:
     if len(payload) < IMU_STRUCT.size:
@@ -128,7 +138,11 @@ def create_app(store: SampleStore) -> Flask:
     const gyroCanvas = document.getElementById("gyro");
     const accelCanvas = document.getElementById("accel");
     const tempCanvas = document.getElementById("temp");
+    const maxSamples = 400;
+    const pollMs = 100;
+    const samples = [];
     let lastSeq = -1;
+    let refreshInFlight = false;
 
     function drawAxes(ctx, w, h, title) {
       ctx.clearRect(0, 0, w, h);
@@ -187,10 +201,19 @@ def create_app(store: SampleStore) -> Flask:
       }
     }
 
-    async function refresh() {
-      const r = await fetch("/samples?count=400");
-      const data = await r.json();
-      const samples = data.samples || [];
+    function appendSamples(incoming) {
+      if (!incoming.length) return false;
+      for (const sample of incoming) {
+        samples.push(sample);
+      }
+      if (samples.length > maxSamples) {
+        samples.splice(0, samples.length - maxSamples);
+      }
+      lastSeq = samples[samples.length - 1].seq;
+      return true;
+    }
+
+    function redraw() {
       if (samples.length === 0) {
         statusEl.textContent = "No samples yet...";
         return;
@@ -199,23 +222,51 @@ def create_app(store: SampleStore) -> Flask:
       const s = samples[samples.length - 1];
       const dt = new Date(s.real_s * 1000).toISOString();
       statusEl.textContent = `seq=${s.seq}  temp=${s.temp_c.toFixed(2)} C  last=${dt}`;
-      lastSeq = s.seq;
 
-      const gx = samples.map(v => v.gyro_dps[0]);
-      const gy = samples.map(v => v.gyro_dps[1]);
-      const gz = samples.map(v => v.gyro_dps[2]);
+      const gx = new Array(samples.length);
+      const gy = new Array(samples.length);
+      const gz = new Array(samples.length);
+      const ax = new Array(samples.length);
+      const ay = new Array(samples.length);
+      const az = new Array(samples.length);
+      const tc = new Array(samples.length);
+
+      for (let i = 0; i < samples.length; i++) {
+        const sample = samples[i];
+        gx[i] = sample.gyro_dps[0];
+        gy[i] = sample.gyro_dps[1];
+        gz[i] = sample.gyro_dps[2];
+        ax[i] = sample.accel_ms2[0];
+        ay[i] = sample.accel_ms2[1];
+        az[i] = sample.accel_ms2[2];
+        tc[i] = sample.temp_c;
+      }
+
       drawSeries(gyroCanvas, "Gyro (dps)", [gx, gy, gz], ["gx", "gy", "gz"], ["#d04a3a", "#2f7ed8", "#3b9c5d"]);
-
-      const ax = samples.map(v => v.accel_ms2[0]);
-      const ay = samples.map(v => v.accel_ms2[1]);
-      const az = samples.map(v => v.accel_ms2[2]);
       drawSeries(accelCanvas, "Accel (m/s^2)", [ax, ay, az], ["ax", "ay", "az"], ["#d04a3a", "#2f7ed8", "#3b9c5d"]);
-
-      const tc = samples.map(v => v.temp_c);
       drawSeries(tempCanvas, "Temperature (C)", [tc], ["temp"], ["#8e44ad"]);
     }
 
-    setInterval(() => refresh().catch(console.error), 200);
+    async function refresh() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const query = lastSeq >= 0
+          ? `/samples?after_seq=${lastSeq}&limit=${maxSamples}`
+          : `/samples?count=${maxSamples}`;
+        const r = await fetch(query, { cache: "no-store" });
+        const data = await r.json();
+        if (appendSamples(data.samples || [])) {
+          redraw();
+        } else if (samples.length === 0) {
+          statusEl.textContent = "No samples yet...";
+        }
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    setInterval(() => refresh().catch(console.error), pollMs);
     refresh().catch(console.error);
   </script>
 </body>
@@ -225,6 +276,11 @@ def create_app(store: SampleStore) -> Flask:
 
     @app.route("/samples")
     def samples() -> Response:
+        after_seq = request.args.get("after_seq", default=None, type=int)
+        limit = request.args.get("limit", default=300, type=int)
+        limit = max(1, min(limit, 5000))
+        if after_seq is not None:
+            return jsonify({"samples": store.since_seq(after_seq, limit)})
         count = request.args.get("count", default=300, type=int)
         count = max(1, min(count, 5000))
         return jsonify({"samples": store.latest(count)})
